@@ -1,0 +1,407 @@
+---
+title: "cust"
+output: html_document
+date: "2026-03-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## R Markdown
+# Load required libraries
+```{r}
+library(dplyr)
+# Read dataset
+data <- read.csv("C:/Users/teaga/Downloads/star_digital.csv")
+
+```
+# Check structure
+```{r}
+str(data)
+summary(data)
+#Question 1) Is online advertising effective? (Treatment vs Control)
+#A Conversion Rate Comparison
+data %>%
+  group_by(test) %>%
+  summarise(
+    conversion_rate = mean(purchase),
+    count = n()
+  )
+#B Difference in Means Test
+t.test(purchase ~ test, data = data)
+#C Logistic Regression (Causal Effect)
+model_q1 <- glm(purchase ~ test, data = data, family = binomial)
+summary(model_q1)
+# Odds ratios
+exp(coef(model_q1))
+```
+#Final answer>> Online advertising appears to have a positive effect on purchase behavior, 
+increasing conversion rates by about 1.9 percentage points. However, the evidence is only 
+marginally significant, so the effectiveness of advertising is suggestive rather than 
+strongly conclusive.
+#Question 2: Is there a frequency effect?
+#A Create Total Impressions Variable
+```{r}
+data$total_impressions <- rowSums(data[, 
+c("imp_1","imp_2","imp_3","imp_4","imp_5","imp_6")])
+#B Logistic Regression with Frequency
+model_q2 <- glm(purchase ~ total_impressions, 
+                data = data, 
+                family = binomial)
+summary(model_q2)
+exp(coef(model_q2))
+#C Optional: Diminishing Returns Test
+data$total_impressions_sq <- data$total_impressions^2
+model_q2_quad <- glm(purchase ~ total_impressions + total_impressions_sq,
+                     data = data,
+                     family = binomial)
+summary(model_q2_quad)
+```
+#Question 3: Compare Sites 1–5 vs Site 6
+#We compare effectiveness using impressions separately.
+```{r}
+model_q3 <- glm(purchase ~ imp_1 + imp_2 + imp_3 + imp_4 + imp_5 + imp_6,
+                data = data,
+                family = binomial)
+summary(model_q3)
+exp(coef(model_q3))
+```
+#Compared to most of Sites 1–5, Site 6 performs better than Sites 1, 3, and 5. However, 
+Site 4 clearly outperforms Site 6 by a substantial margin.
+#Question 4: Where should Star Digital allocate budget?
+#Compare Combined Sites 1–5 vs Site 6
+```{r}
+data$imp_1_5 <- rowSums(data[, c("imp_1","imp_2","imp_3","imp_4","imp_5")])
+model_q4 <- glm(purchase ~ imp_1_5 + imp_6,
+                data = data,
+                family = binomial)
+summary(model_q4)
+exp(coef(model_q4))
+
+#Predicted Probability Comparison
+data$predicted_prob <- predict(model_q4, type = "response")
+mean(data$predicted_prob)
+```
+#While both advertising channels are effective, Sites 1–5 collectively produce a larger 
+marginal return per impression than Site 6. Therefore, Star Digital should allocate a 
+greater share of its advertising budget to Sites 1–5, with emphasis on the highest 
+performing site within that group.
+library(ggplot2)
+#Question 1 visual
+# Conversion rate by treatment
+```{r}
+install.packages("ggplot2")
+library(ggplot2)
+conv_data <- data %>%
+  group_by(test) %>%
+  summarise(conversion_rate = mean(purchase))
+ggplot(conv_data, aes(x = factor(test), y = conversion_rate, fill = factor(test))) +
+  geom_bar(stat = "identity") + geom_text(aes(y = conversion_rate / 2,
+                label = round(conversion_rate, 3)),
+            color = "white",
+            size = 5) +
+  labs(
+    title = "Conversion Rate: Treatment vs Control",
+    x = "Group (0 = Control, 1 = Treatment)",
+    y = "Conversion Rate"
+  ) +
+  theme_minimal() +
+  guides(fill = "none")
+#Question 2 Visual
+# Create prediction grid
+new_data <- data.frame(
+  total_impressions = seq(0, max(data$total_impressions), length.out = 100)
+)
+new_data$total_impressions_sq <- new_data$total_impressions^2
+new_data$predicted_prob <- predict(model_q2_quad, 
+                                   newdata = new_data, 
+                                   type = "response")
+ggplot(new_data, aes(x = total_impressions, y = predicted_prob)) +
+  geom_line(size = 1) +
+  labs(
+    title = "Effect of Advertising Frequency on Purchase Probability",
+    x = "Total Impressions",
+    y = "Predicted Purchase Probability"
+  ) +
+  theme_minimal()
+#Question 3 visual 
+# Extract odds ratios
+odds_ratios <- exp(coef(model_q3))[-1]
+site_data <- data.frame(
+  site = names(odds_ratios),
+  odds_ratio = odds_ratios
+)
+ggplot(site_data, aes(x = site, y = odds_ratio)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red") +
+  labs(
+    title = "Effectiveness by Site (Odds Ratios)",
+    x = "Site",
+    y = "Odds Ratio"
+  ) +
+  theme_minimal()
+#Question 4 visual
+budget_odds <- exp(coef(model_q4))[-1]
+budget_data <- data.frame(
+  channel = names(budget_odds),
+  odds_ratio = budget_odds
+)
+ggplot(budget_data, aes(x = channel, y = odds_ratio)) +
+  geom_bar(stat = "identity", fill = "darkgreen") +     geom_text(aes(y = odds_ratio / 2, label = round(odds_ratio, 4)),
+            color = "white",
+            size = 5)+
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red") +
+  labs(
+    title = "Budget Allocation Impact Comparison",
+    x = "Channel",
+    y = "Odds Ratio"
+  ) +
+  theme_minimal()
+```
+```{r}
+data$imp_1_5 <- rowSums(data[, c("imp_1","imp_2","imp_3","imp_4","imp_5")], na.rm = TRUE)
+
+model_q4 <- glm(purchase ~ imp_1_5 + imp_6, data = data, family = binomial)
+
+summary(model_q4)
+exp(coef(model_q4))
+b1 <- coef(model_q4)["imp_1_5"]
+b2 <- coef(model_q4)["imp_6"]
+
+imp_1_5_for_100 <- (100 / 25) * 1000
+imp_6_for_100   <- (100 / 20) * 1000
+
+exp(imp_1_5_for_100 * b1)
+exp(imp_6_for_100 * b2)
+
+(exp(imp_1_5_for_100 * b1) - 1) * 100
+(exp(imp_6_for_100 * b2) - 1) * 100
+```
+
+```{r}
+# Question 2 Visual
+# Create prediction grid
+new_data <- data.frame(
+  total_impressions = seq(0, max(data$total_impressions), length.out = 100)
+)
+
+new_data$total_impressions_sq <- new_data$total_impressions^2
+new_data$predicted_prob <- predict(
+  model_q2_quad,
+  newdata = new_data,
+  type = "response"
+)
+
+# Find turning point
+turn_point <- new_data[which.max(new_data$predicted_prob), ]
+
+ggplot(new_data, aes(x = total_impressions, y = predicted_prob)) +
+  geom_line(linewidth = 1) +
+  geom_point(data = turn_point,
+             aes(x = total_impressions, y = predicted_prob),
+             color = "red",
+             size = 3) +
+  geom_text(data = turn_point,
+            aes(x = total_impressions,
+                y = predicted_prob,
+                label = round(total_impressions, 1)),
+            color = "black",
+            vjust = 2,
+            size = 5) +
+  labs(
+    title = "Effect of Advertising Frequency on Purchase Probability",
+    x = "Total Impressions",
+    y = "Predicted Purchase Probability"
+  ) +
+  theme_minimal()
+```
+```{r}
+# ROI
+
+
+# 1) Load data
+data <- read.csv("star_digital (2).csv")
+
+# Check purchase rate in analysis sample
+mean(data$purchase)   # should be around 0.50
+
+
+# 2) Build variables
+# Total impressions across sites 1-5
+data$imp_1_5 <- rowSums(data[, c("imp_1", "imp_2", "imp_3", "imp_4", "imp_5")], na.rm = TRUE)
+
+# Showing effect = at least one impression
+data$show_1_5 <- ifelse(data$imp_1_5 > 0, 1, 0)
+data$show_6   <- ifelse(data$imp_6 > 0, 1, 0)
+
+# Frequency effect = extra impressions after the first
+data$freq_1_5 <- pmax(data$imp_1_5 - 1, 0)
+data$freq_6   <- pmax(data$imp_6 - 1, 0)
+
+
+# 3) Fit model on SAMPLE scale
+
+# No offset here
+# The causal ad effect is identified by interactions with test
+model <- glm(
+  purchase ~ test +
+    show_1_5 + freq_1_5 + show_6 + freq_6 +
+    test:show_1_5 + test:freq_1_5 +
+    test:show_6   + test:freq_6,
+  family = binomial(link = "logit"),
+  data = data
+)
+
+summary(model)
+exp(coef(model))   # odds ratios
+
+
+# 4) Offset to true population conversion rate
+
+# True conversion rate = 0.153% = 0.00153
+true_purchase_rate   <- 0.00153
+sample_purchase_rate <- mean(data$purchase)
+
+offset_factor <- qlogis(true_purchase_rate) - qlogis(sample_purchase_rate)
+offset_factor
+
+
+# 5) Predicted probabilities on POPULATION scale
+
+# First get sample-scale linear predictor
+lp_sample <- predict(model, type = "link")
+
+# Then shift to population-scale with offset
+lp_pop <- lp_sample + offset_factor
+p_full <- plogis(lp_pop)
+
+summary(p_full)
+mean(p_full)   # should now be small, near real-world scale
+
+
+# 6) Counterfactual: remove Site 6 causal effect
+
+b <- coef(model)
+
+lp_no6_sample <- lp_sample -
+  b["test:show_6"] * (data$test * data$show_6) -
+  b["test:freq_6"] * (data$test * data$freq_6)
+
+lp_no6_pop <- lp_no6_sample + offset_factor
+p_no6 <- plogis(lp_no6_pop)
+
+inc_conv_6 <- sum(p_full - p_no6)
+inc_conv_6
+
+
+# 7) Counterfactual: remove Sites 1-5 causal effect
+
+lp_no15_sample <- lp_sample -
+  b["test:show_1_5"] * (data$test * data$show_1_5) -
+  b["test:freq_1_5"] * (data$test * data$freq_1_5)
+
+lp_no15_pop <- lp_no15_sample + offset_factor
+p_no15 <- plogis(lp_no15_pop)
+
+inc_conv_15 <- sum(p_full - p_no15)
+inc_conv_15
+
+# 8) Impression totals and costs
+
+# Only treated users got Star Digital ads
+imps_15 <- sum(data$imp_1_5[data$test == 1], na.rm = TRUE)
+imps_6  <- sum(data$imp_6[data$test == 1], na.rm = TRUE)
+
+cpm_15 <- 25
+cpm_6  <- 20
+
+cost_15 <- (imps_15 / 1000) * cpm_15
+cost_6  <- (imps_6  / 1000) * cpm_6
+
+cost_15
+cost_6
+
+
+# 9) Revenue and ROI
+
+purchase_value <- 1200
+
+rev_15 <- inc_conv_15 * purchase_value
+rev_6  <- inc_conv_6  * purchase_value
+
+roi_15 <- (rev_15 - cost_15) / cost_15
+roi_6  <- (rev_6  - cost_6) / cost_6
+
+roi_15
+roi_6
+
+
+# 10) Incremental revenue per 1000 impressions
+
+inc_rev_per_1000_15 <- (inc_conv_15 / imps_15) * 1000 * purchase_value
+inc_rev_per_1000_6  <- (inc_conv_6  / imps_6 ) * 1000 * purchase_value
+
+inc_rev_per_1000_15
+inc_rev_per_1000_6
+
+# Break-even check
+# Profitable if incremental revenue per 1000 impressions > CPM
+inc_rev_per_1000_15 - cpm_15
+inc_rev_per_1000_6  - cpm_6
+
+
+# 11) Results table
+
+results <- data.frame(
+  Option = c("Sites 1-5", "Site 6"),
+  Impressions = c(imps_15, imps_6),
+  Cost = c(cost_15, cost_6),
+  Incremental_Conversions = c(inc_conv_15, inc_conv_6),
+  Incremental_Revenue = c(rev_15, rev_6),
+  ROI = c(roi_15, roi_6)
+)
+
+print(results)
+
+
+# 12) Recommendation
+
+if (roi_6 > roi_15) {
+  cat("\nRecommendation: Site 6 has the higher estimated ROI.\n")
+} else {
+  cat("\nRecommendation: Sites 1-5 have the higher estimated ROI.\n")
+}
+
+if (inc_rev_per_1000_6 > cpm_6) {
+  cat("Site 6 appears profitable on an incremental basis.\n")
+} else {
+  cat("Site 6 does NOT appear profitable on an incremental basis.\n")
+}
+
+if (inc_rev_per_1000_15 > cpm_15) {
+  cat("Sites 1-5 appear profitable on an incremental basis.\n")
+} else {
+  cat("Sites 1-5 do NOT appear profitable on an incremental basis.\n")
+}
+
+
+# 13) Helpful diagnostics
+
+cat("\n--- Diagnostics ---\n")
+cat("Sample purchase rate: ", sample_purchase_rate, "\n")
+cat("True purchase rate:   ", true_purchase_rate, "\n")
+cat("Offset factor:        ", offset_factor, "\n")
+cat("Mean predicted probability (population scale): ", mean(p_full), "\n")
+```
+
+```{r}
+roi_15
+roi_6
+```
+`
+```{r}
+model
+```
+
